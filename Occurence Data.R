@@ -52,14 +52,18 @@ setwd("/home/alessio/Udemy_Ecology_in_R/Lesson 2 Occurence and species Density")
 # Pull records on a family from GBIF
 # this code is retrieving a suggested key for the taxonomic name "Pythonidae" at the family level from gbif
 key <- name_suggest(q='Pythonidae', rank='family')$data$key[1]
+
 # Show metadata of records for Pythonidae in the database
 # this code is retrieving the total count of occurrences for a specific taxonomic key in gbif
 occ_search(taxonKey=key, limit=0)$meta$count
+
 # Pulls your data from GBIF, limit to 200 records as an example dataset
 # this code fetches (prendere, portare) occurrence data for a specific taxonomic key from gbif setting the limit to 200 occurrences
 spdat <- occ_search(taxonKey = key, return = "data", limit = 200)
+
 #pull out the data file
 spdat <- spdat$data
+
 #view the data that was returned
 View(spdat)
 
@@ -84,8 +88,9 @@ dat <- na.omit(dat)
 # Spatial Data Frame object that allows R to read and map it
 # to do this properly, we need to add a Coordinate Reference System (CRS) 
 # value based on the GPS coordinate system. Typically this is WGS84, 
-# but lets check anyways! The table function is extremely useful, 
-# as it will show you all the valuesin any given column, 
+# but lets check anyways! 
+# The table function is extremely useful, 
+# as it will show you all the values in any given column, 
 # and show you the frequency at which they occur
 
 table(spdat$geodeticDatum) # this shows all our GPS data is WGS84
@@ -181,6 +186,8 @@ dat.new<-dframe(dat.new) %>% coord_impossible()
 dat.new<-dframe(dat.new) %>% coord_unlikely()
 
 # make our spatial object
+# creates a SpatialPoints object, the coordinates are specified by the coord argument.
+# here it is taking dat.new coordinates. Proj4strings sets the CRS.
 sp.new <- SpatialPoints(coords=cbind(dat.new$longitude, dat.new$latitude), 
                     proj4string = CRS("+init=epsg:4326"))
 
