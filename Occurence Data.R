@@ -10,17 +10,24 @@
 # code and plugging in your own data
 
 # we will begin by installing and opening necessary packages
-install.packages("rgbif")
-install.packages("mapview")
-install.packages("scrubr")
-install.packages("sp")
+install.packages("rgbif") # provides an interface to the Glopbal Biodiversity Information Facility (GBIF) database. This package allows users
+# to query and access biodiversity data from GBIF directly. Data are like species occurrence records, search for specific taxonomic groups, 
+# filter data based on various categories (such as geographic location or temporal range) and perform analysis.
+install.packages("mapview") # provides interactive mapping capabilities. It allows to create interactive maps with spatial data. Users can plot 
+# spatial data such as points, lines, and polygons on interactive maps. 
+install.packages("scrubr") # provides functions for cleaning and preprocessing data (manage missing values, outliers, inconsistencies..)
+install.packages("sp") # provides classes and methods for handling spatial data (points, lines, polygons and grids in R). It introduces classes
+# like SpatialPoints, SpatialLines, SpatialPolygons, and SpatialGrids. These classes comes with methods for spatial operations, transformations,
+# and analyses.
 
-#Now we open the packages we installed, and one from the previous lesson
+# Now we open the packages we installed, and one from the previous lesson
 library(rgbif)
 library(mapview)
 library(scrubr) # NA, used to 'clean' data
 library(sp)  # deals with spatial data (simple features), useful for data type conversion
-library(dplyr)
+library(dplyr) # provides functions for data manipulation and transformation. Some key functions: 1) filter() used to subset df rows based on specific
+# conditions. 2) mutate() used to create new variables or modify existing variables in a df. 3) select() enables users to choose specific columns 
+# from a df. 4) arrange() used to reorder rows of a df based on one or more variables. 5) summarize() aggregates data and calculates summary statistics.
 
 setwd("/home/alessio/Udemy_Ecology_in_R/Lesson 2 Occurence and species Density")
 # The rgbif package allows us to access and query species occurence data
@@ -40,10 +47,13 @@ setwd("/home/alessio/Udemy_Ecology_in_R/Lesson 2 Occurence and species Density")
 ?occ_search
 
 # Pull records on a family from GBIF
+# this code is retrieving a suggested key for the taxonomic name "Pythonidae" at the family level from gbif
 key <- name_suggest(q='Pythonidae', rank='family')$data$key[1]
 # Show metadata of records for Pythonidae in the database
+# this code is retrieving the total count of occurrences for a specific taxonomic key in gbif
 occ_search(taxonKey=key, limit=0)$meta$count
 # Pulls your data from GBIF, limit to 200 records as an example dataset
+# this code fetches (prendere, portare) occurrence data for a specific taxonomic key from gbif setting the limit to 200 occurrences
 spdat <- occ_search(taxonKey = key, return = "data", limit = 200)
 #pull out the data file
 spdat <- spdat$data
