@@ -20,18 +20,24 @@ setwd("/home/alessio/Udemy_Ecology_in_R/Lesson 2 Occurence and species Density")
 # install.packages("RcolorBrewer")
 # install.packages("ggspatial")
 
-library(sp)
+library(sp) # provides classes and methods for spatial data representation and manipulation. Allows to work with spatial data types
+            # like points, lines, polygons and grids. Provides functions for spatial data operations such as plotting, subsetting and analysis.
 library(raster)
-library(usdm)
+library(usdm) # package for conducting uncertainty analysis in species distribution models. Provides functions and tools for evaluating and
+              # quantifying the uncertainty associated with predictions made by species distribution models.
 library(mapview)
 library(rgbif)
 #library(scrubr)
 #library(GISTools)
-library(maps)
+library(maps) # provides a collection of map data sets and geographical boundaries that can be used for creating maps and visualizing spatial data.
+              # It includes world maps, country maps, and state/province maps that can be easily plotted and customized.
+              # Is commonly used for creating simple visualizations of geographic data, such as plotting points on a map, overlaying boundaries,
+              # or creating chloropleth maps based on spatial data.
 library(ggplot2)
-library(RColorBrewer)
-library(ggspatial)
-library(sf)
+library(RColorBrewer) # provides a collection of color-blind friendly pallettes usefull for creating visually appealing and informative plots. 
+library(ggspatial) # extension of the ggplot2 designed for spatial data visualization. Integrates spatial layers into ggplot and provides
+                   # utilities for handling spatial data (simple features and spatial objects)
+library(sf) 
 library(dplyr)
 
 # first we will query a large dataset of 6,000 occurence records
@@ -78,7 +84,8 @@ mapview(spdat, map.types = "Esri.NatGeoWorldMap", layer.name = "Species",
 # to do this, we will use the "getData()" function from the raster package
 # the getData() function is incredibly usefull, it can pull raster date such
 # as map shapefile, global climate data, and elevation data.
-?getData
+
+?getData # alternative is the godata package. Here the gadm() could be used!
 Thailand<-raster::getData('GADM', country='THA', level=0)
 Malaysia<-raster::getData('GADM', country='MYS', level=0)
 Indonesia<-raster::getData('GADM', country='IDN', level=0)
@@ -111,7 +118,10 @@ plot(Thailand)
 # 
 # # Create SpatialPointsDataFrame
 # spdat_sp <- SpatialPointsDataFrame(coords = spdat_points, data = as.data.frame(spdat))
-
+# over() performs a spatial joint operation, it takes two spatial objects as input and returns the attributes of the
+# second object that intersect or contain the features of the first object.
+# countsindo will be a datastructure containing the attributes of "Indonesia" that corresponds to the spatial
+# points or polygons in "spdat".
 countsindo <- sp::over(spdat, Indonesia) %>%
   na.omit()
 countsindo <- sum(countsindo$NAME_0 == "Indonesia")
@@ -145,14 +155,14 @@ countsmyan <- sum(countsmyan$NAME_0 == "Myanmar")
 # Now we are going to extract the total area from each polygon. 
 # To do this, we will call the raster package and use the "area()" 
 # function. The output of this will be in meters, since the density
-# formula requires km sq, we will divide our output by 1000
-ThaiArea <- raster::area(Thailand)/1000
-VietArea <- raster::area(Vietnam)/1000
-LaosArea <- raster::area(Laos)/1000
-MyanArea <- raster::area(Myanmar)/1000
-CambArea <- raster::area(Cambodia)/1000
-IndoArea <- raster::area(Indonesia)/1000
-MalayArea <- raster::area(Malaysia)/1000
+# formula requires km sq, we will divide our output by 1000000
+ThaiArea <- raster::area(Thailand)/1000000
+VietArea <- raster::area(Vietnam)/1000000
+LaosArea <- raster::area(Laos)/1000000
+MyanArea <- raster::area(Myanmar)/1000000
+CambArea <- raster::area(Cambodia)/1000000
+IndoArea <- raster::area(Indonesia)/1000000
+MalayArea <- raster::area(Malaysia)/1000000
 
 
 # find density of individuals in each country (individuals/km2)
@@ -226,6 +236,7 @@ rViet #check the raster to see what was done
 
 # Now we will add our Vietnam polygon to the raster layer
 # as an additional attribute 
+# Convert country polygon to a raster
 rViet <- rasterize(Vietnam, rViet)
 # let's check what we've done
 plot(rViet)
@@ -239,6 +250,9 @@ points(spdat, col='red', cex=.5)
 
 # Summarize the density of points in each cell by "rasterizing"
 # the occurences and the polygon grid and counting them
+# convert point data (spdat) into raster format within Vietnam boundaries. 
+# Count is the function used when rasterizing the grid and serves to count the 
+# number of points that fall into each cell of the raster grid.
 pdViet <- rasterize(coordinates(spdat), rViet, fun='count', background=0)
 # plot our density with a scale bar showing high to low density
 plot(pdViet)
