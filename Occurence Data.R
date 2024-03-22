@@ -11,14 +11,17 @@
 
 # we will begin by installing and opening necessary packages
 install.packages("rgbif") # provides an interface to the Glopbal Biodiversity Information Facility (GBIF) database. This package allows users
-# to query and access biodiversity data from GBIF directly. Data are like species occurrence records, search for specific taxonomic groups, 
-# filter data based on various categories (such as geographic location or temporal range) and perform analysis.
+                          # to query and access biodiversity data from GBIF directly. Data are like species occurrence records, search for specific taxonomic groups, 
+                          # filter data based on various categories (such as geographic location or temporal range) and perform analysis.
+
 install.packages("mapview") # provides interactive mapping capabilities. It allows to create interactive maps with spatial data. Users can plot 
 # spatial data such as points, lines, and polygons on interactive maps. 
+
 install.packages("scrubr") # provides functions for cleaning and preprocessing data (manage missing values, outliers, inconsistencies..)
+
 install.packages("sp") # provides classes and methods for handling spatial data (points, lines, polygons and grids in R). It introduces classes
-# like SpatialPoints, SpatialLines, SpatialPolygons, and SpatialGrids. These classes comes with methods for spatial operations, transformations,
-# and analyses.
+                       # like SpatialPoints, SpatialLines, SpatialPolygons, and SpatialGrids. These classes comes with methods for spatial operations, transformations,
+                       # and analyses.
 
 # Now we open the packages we installed, and one from the previous lesson
 library(rgbif)
@@ -26,8 +29,8 @@ library(mapview)
 library(scrubr) # NA, used to 'clean' data
 library(sp)  # deals with spatial data (simple features), useful for data type conversion
 library(dplyr) # provides functions for data manipulation and transformation. Some key functions: 1) filter() used to subset df rows based on specific
-# conditions. 2) mutate() used to create new variables or modify existing variables in a df. 3) select() enables users to choose specific columns 
-# from a df. 4) arrange() used to reorder rows of a df based on one or more variables. 5) summarize() aggregates data and calculates summary statistics.
+               # conditions. 2) mutate() used to create new variables or modify existing variables in a df. 3) select() enables users to choose specific columns 
+               # from a df. 4) arrange() used to reorder rows of a df based on one or more variables. 5) summarize() aggregates data and calculates summary statistics.
 
 setwd("/home/alessio/Udemy_Ecology_in_R/Lesson 2 Occurence and species Density")
 # The rgbif package allows us to access and query species occurence data
