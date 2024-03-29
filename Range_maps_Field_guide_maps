@@ -1,0 +1,231 @@
+##############################################################
+################# Species Range Map ##########################
+##############################################################
+
+# To create our species disturbution/range map, we will use MaxEnt SDM 
+# again, similar to the last lesson. However, we will modify the 
+# predictive output to only show areas with >30% probability of
+# distribution
+
+#set the working directory 
+setwd("/home/alessio/Udemy_Ecology_in_R/Lesson 3 Range Maps and SDM")
+
+# We will start by installing new packages, and opening all necessary
+# packages for the excersise
+
+install.packages("rnaturalearth")
+install.packages("rnaturalearthdata")
+install.packages("sf")
+install.packages("ggspatial")
+install.packages("rJava")
+install.packages("dismo")
+install.packages("rjasonlite")
+install.packages("mapdata")
+install.packages("rgdal")
+install.packages("rJava")
+
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(ggspatial)
+library(sf)
+library(dismo)
+library(jsonlite)
+library(mapdata)
+library(raster)
+library(mapview)
+library(ggplot2)
+library(dplyr)
+library(rgbif)
+#library(maptools)
+#library(rgdal)
+
+
+# As we did in the last lesson, we will start by pulling some 
+# GBIF data. I will use the same occurence data set as last time
+# because there is very minimal cleaning necessary.
+list.files()
+dat <- read.csv("Species_env_data.csv")
+# keep only coordinates and species name
+spdat <- select(dat, coords.x1, coords.x2, species)
+colnames(spdat) <- c("longitude", "latitude", "species")
+# remove NA values
+spdat <- na.omit(spdat)
+# remove duplicates
+spdat <- unique(spdat)
+#make a spatialpoints object
+sp <- SpatialPoints(cbind(spdat$longitude, spdat$latitude),
+                    proj4string = CRS("+init=epsg:4326"))
+# re-add species names
+sp$species <- spdat$species
+#check the points
+mapview(sp) 
+
+# get mean location to query raster data
+mlong <- mean(sp@coords[,1])
+mlat <- mean(sp@coords[,2])
+
+
+#~~~~~~~~~~~~~~~~~~~~~ ENVIRONMENTAL DATA ~~~~~~~~~~~~~~~~~~
+
+# Since we're focusing only on species in Belize we will pull a raster
+# outline of the country so we can trim the extent of our environmental variables
+# to it using the GADM and iso3 (3 letter country code) "BLZ"
+Belize <- getData("GADM", country = "BLZ", level = 0)
+# match the projections with our species data just in case
+# it isn't already
+proj4string(Belize) <- projection(sp)
+
+#mask any points outside of Belize
+sp <- sp[!is.na(over(sp, as(Belize, "SpatialPolygons"))),]
+#Check our raster file
+plot(Belize)
+#add our points
+points(sp, col = "red")
+
+
+# As we did in the last lesson, we will use the raster package to pull 
+# our environmental data, only this time we will use "bioclim" 
+# data instead of minimum and maximum temperature data. we will also 
+# get future forcasted environmental data to make future predictions for 
+# our species distributions
+
+# query current environmental data for our location
+clim.current <- getData("worldclim", var="bio", res=0.5,
+                        lat = mlat, lon = mlong)
+
+
+
+# ~~~~~~~~~~~~~~~~~ Modelling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# To begin, we will crop environment to Belize
+# so get the extent of the Belize polygon
+BZE.ext <- extent(Belize)
+# crop the climate data to the extent of Belize
+climate.crop <- crop(clim.current, BZE.ext)
+# now use the mask function
+BLZ.model.current <- mask(climate.crop, Belize)
+
+
+# check that we only have Belize in our environmental data by plotting 
+# the first bioclim raster
+plot(BLZ.model.current)
+
+plot(BLZ.model.current[[1]])
+plot(Belize, add=TRUE)
+plot(sp, add=TRUE, col="red")
+
+
+# use only 20% of the data for testing the model
+# first we will combine the coordinates into a two column dataframe
+sp.occ <- cbind.data.frame(spdat$longitude,spdat$latitude)
+# now we will cluster the data using a 5 partition "k-fold" clustering.
+# this essentially assigns each row of coordinates a value of 1-5
+sp.fold <- kfold(sp.occ, k=5)
+# use only the data that has been assigned 1 for model testing
+sp.test <- sp.occ[sp.fold == 1, ]
+# use the remainder of the clustered points for training
+sp.train <- sp.occ[sp.fold != 1, ]
+
+
+# Now we will fit our current environmental data into the MaxEnt model 
+sp.MaxEnt <- maxent(BLZ.model.current, sp.train)
+
+# plot showing significance of each bioclimatic variable
+# each bioclim raster has a meaning (wettest average, dryest average,
+# coldest/hottest average), you need to look the meanings up to determine
+# the significance of their effect on your study species. 
+plot(sp.MaxEnt)
+
+# plot response curves to visualize how the predicted value (between 0-1)
+# is effected by increases in the bioclimatic variable
+response(sp.MaxEnt)
+
+
+# Now we can predict the entire dataset
+sp.pred <- predict(sp.MaxEnt, BLZ.model.current)
+
+
+# plot the predictions
+plot(sp.pred, main="Predicted environmental Suitability")
+plot(Belize, add=TRUE)
+points(sp, pch="+", cex=0.5)
+
+# evaluate our model before moving on
+# first we create the background points (pseudoabsences)
+BG.points <- randomPoints(BLZ.model.current, 1000)
+
+Eval <- evaluate(sp.MaxEnt, p=sp, a=BG.points, x=BLZ.model.current)
+
+# plot the evaluation Receiver Operating Characteristic (ROC) curve
+# basically the further the curve (red) is away from the central line
+# (grey) the more accurate the model is. The higher your AUC value,
+# the better your model is. You will need to make several models to
+# compare the AUC in order to find the best fit model.
+plot(Eval, 'ROC')
+
+# Now we will make a polygon from our sp.pred raster, using only
+# the preicted ranges above 50% probability to create our range map
+# first we will assign sp.pred to a raster object named "r"
+r <- sp.pred
+# now we turn every probability below 0.1 (10%) to NA
+r[r < 0.1] <- NA
+# then we remove all NA values
+r <- na.omit(r)
+# now mask any parts of the polygon which fall outside of Belize
+r <- mask(r, Belize)
+# now we turn our raster into a polygon
+r <- rasterToPolygons(r)
+# ang we aggregate the polygon so it doesn't represent 0.3 - 1
+# but rather a simple distribution (since we know what it represents)
+r <- aggregate(r,dissolve=T)
+
+
+
+# Quickly plot our distribution polygon to see what it looks like 
+plot(Belize)
+plot(r, add = TRUE, col = "green")
+points(sp, col = "red")
+
+# ~~~~~~~~~~~~~~~ Map the distibution ~~~~~~~~~~~~~~~~~~~~~~~~
+
+# get a world object with all countries
+world <- ne_countries(scale = "medium", returnclass = "sf")
+# get central points and coordinates to label the country names
+# don't worry about the warning message it just refers to possible
+# improper location of country name text (but insignificantly so)
+world_points<- st_centroid(world)
+world_points <- cbind(world, st_coordinates(st_centroid(world$geometry)))
+
+# Make the range map
+ggplot(data = world) + 
+  geom_sf(fill= "antiquewhite") + 
+  geom_spatial_polygon(data = Belize, aes(x = long, y = lat, group = group), size = 1,
+                       alpha = 1, linetype = 1, color = "black", fill = "antiquewhite") +
+  geom_spatial_polygon(data = r, aes(x = long, y = lat, group = group, fill="green"), size = 0.5,
+                       alpha = 0.2, linetype = 1, color = "black") +
+  scale_fill_manual(values = c("green" = "green", "antiquewhite" = "none"),
+                    labels = c("Range", ""))+
+  geom_text(data= world_points,aes(x=X, y=Y, label=name), size = 5,
+            color = "black", fontface = "bold", check_overlap = FALSE) +
+  annotation_north_arrow(location = "br", 
+                         which_north = "true", 
+                         pad_x = unit(0.2, "in"), 
+                         pad_y = unit(0.5, "in"), 
+                         style = north_arrow_fancy_orienteering) +
+  # for this part, refer to your "bbox" of the "Belize" object
+  coord_sf(xlim = c(-89.224, -87.486), ylim = c(15.893, 18.487), 
+           expand = FALSE) + xlab("Longitude") + ylab("Latitude") + 
+  ggtitle("Alouatta pigra") + 
+  theme(panel.grid.major = element_line(color = gray(.5), 
+                                        linetype = "dashed", size = 0.5), 
+        panel.background = element_rect(fill = "aliceblue"),
+        plot.title = element_text(hjust = 0.5),
+        legend.position = c(0.88, 0.99),
+        legend.background = element_blank())+
+  labs(fill = "")
+
+Belize@bbox
+# This simple technique can be used for basic species range maps in 
+# field guides and reports, however the accuracy can always be improved
+# by modelling with elevation features, forest cover/NDVI, and any other
+# covariates which may be important to your species. 
