@@ -1,0 +1,219 @@
+##############################################################
+########## Environmental and Remote Sensing data #############
+##############################################################
+
+#set the working directory 
+setwd("/home/alessio/Udemy_Ecology_in_R/Lesson 3 Range Maps and SDM")
+
+# First, we will open all necessary packages
+
+library(raster)
+library(mapview)
+library(ggplot2)
+library(dplyr)
+library(rgbif)
+#library(maptools)
+#library(scrubr)
+
+
+# ----------------------------
+
+# To start this excersise, we will retrieve some records from GBIF
+# so we have some data to work with. I chose to use Alouatta pigra
+# The Yucatam Howler Monkey in Belize
+key <- name_suggest(q = "Alouatta pigra", rank = "species")$data$key[1]
+occ_search(taxonKey=key, limit=0)$meta$count
+spdat <- occ_search(taxonKey = key, return = "data", limit = 100, country = "BZ")
+dat.all <- spdat$data
+
+
+# Something that occasionally happens, as you'll find in some queries,
+# is that the return gives you a "large gbif" object instead of a single 
+# dataframe. This is usually because there are records under an alternate
+# taxonomy, or an identification number. Check the values and pull the 
+# data frame that isn't empty using the "$" symbol after the data. 
+
+
+# You should know the drill by now, we will only use the species and lat
+# lon coordinates for our dataframe in this excersise too, then build from
+# there. GBIF provides an "elevation" column for the data query, however
+# the values are usually inflated with NA values. 
+spdat <- select(dat.all, decimalLongitude, decimalLatitude, species)
+colnames(spdat) <- c("longitude", "latitude", "species")
+
+spdat <- na.omit(spdat)
+
+# clean the coordinates
+# dat<-dframe(spdat) %>% coord_impossible()
+# dat<-dframe(spdat) %>% coord_unlikely()
+
+#make a spatialpoints object
+sp <- SpatialPoints(cbind(spdat$longitude, spdat$latitude),
+                    proj4string = CRS("+init=epsg:4326"))
+
+sp$species <- spdat$species
+
+# quickly map and check our points to make sure there is 
+# nothing out of the ordinary (points in the ocean/arctic etc.)
+mapview(sp) 
+
+# the central location of the points can be acquired by taking the 
+# mean value of the lat and long coordinates we will get this now
+# to use later when querying our data
+mlong <- mean(sp@coords[,1])
+mlat <- mean(sp@coords[,2])
+
+# ~~~~~~~~~~ Belize polygon shapefile ~~~~~~~~~~~~~~~~~~~~~~~
+
+# Get a Belize map outline
+Belize <- getData("GADM", country = "BLZ", level = 0)
+# get the central coordinates of the polygon
+mlong <- (Belize@bbox[1] + Belize@bbox[3])/2 # bb=bounding box
+mlat <- (Belize@bbox[2] + Belize@bbox[4])/2
+
+# match the projections with our species data just in case
+# it isn't already
+proj4string(Belize) <- projection(sp)
+
+# Get only the species data which fall inside Belize since
+# we see some are in the ocean and Guatemala
+sp <- sp[!is.na(over(sp, as(Belize, "SpatialPolygons"))),]
+
+# finally, lets recreate our newly cleaned species dataframe
+spdat <- as.data.frame(sp)
+
+
+#~~~~~~~~~~~~~~~~~~ GET ELEVATION DATA ~~~~~~~~~~~~~~~~~~~~~~
+
+
+# As stated in recent lessons, the raster package function "getData()" is
+# exceptionally useful, as it allow you to pull country, climate, and elevation
+# data. However, the catch for elevation data is that it only extracts a 
+# single "tile" or large square elevation raster object at a time. 
+# For this excersise we have a limited range, so we only need one.
+elevation <- getData("SRTM", lon = mlong, lat = mlat)
+# get the extent of the Belize polygon
+BZE.ext <- extent(Belize)
+# crop the elevation data to the extent of Belize
+elevation.crop <- crop(elevation, BZE.ext)
+# now use the mask function
+rr <- mask(elevation.crop, Belize)
+# check that we've successfuly clipped the data properly
+# plot, and overlay:
+plot(rr);plot(Belize,add=TRUE)
+plot(sp, add=TRUE)
+
+
+# now we use the extract() function from the raster package to extract and
+# tabulate our elevation raster data with our point data
+elev.dat <- raster::extract(elevation, sp)
+
+# now we can add the elevation data to our spdat data frame we are building 
+# the points were not re-organized during this process so the elevation values
+# correspond with the order of points fed into the "extract" function
+spdat$elevation <- elev.dat
+
+# check the first 5 records of our data
+head(spdat)
+
+
+#~~~~~~~~~~~~~~~~~~ GET CLIMATE DATA ~~~~~~~~~~~~~~~~~~~~~~
+# in order to get our climate data, we will also use the raster package
+# raster pulls several "bioclim" rasters from the "Worldclim" database
+# representing yearly minimum and maximum climates
+# Note: these TIF files are saved to your workdesk, so if you have any 
+# internet connection interruptions, you may run an error when trying to 
+# re-download the files. Simply go to your working directory, and 
+# delete the folder titled and run these lines again
+
+# Get the average monthly minimum temperatures 
+temp_min <- getData('worldclim', var='tmin', res=0.5, 
+                   lon = mlong, lat = mlat)
+# Get average monthly maximum temperatures
+temp_max <- getData('worldclim', var='tmax', res=0.5, 
+                   lon = mlong, lat = mlat)
+
+#crop the extent
+tmin.crop <- crop(temp_min, BZE.ext)
+tmax.crop <- crop(temp_max, BZE.ext)
+# clip the temperature rasters to Belize, unfortunately, we will have
+# to do it manually
+tminrr <- mask(tmin.crop, Belize)
+tmaxrr <- mask(tmax.crop, Belize)
+
+# notice the object produced this time is a "rasterstack" and not a 
+# "rasterlayer" this indicates that there are many rasters within the 
+# object. If we would like to visualize all of the layers, we can simply
+# plot the object with the "plot()" function
+plot(tminrr)
+# if we want to visualize a single rasterlayer, we use the double [[]] 
+# bracketsand indicate the number of the rater we want to view
+plot(tminrr[[1]])
+# we can use mapview for single rasterlayers
+mapview(tminrr[[5]]) + mapview(sp)
+# as you can see, the climate tiles are much larger than elevation tiles
+# you will notice (if you run through the various files) that the climate 
+# isn't substantially different for Belize, with the higher elevations
+# producing lower average temperatures than the lower elevations
+
+
+# Again, we will extract the values for our points; however we
+# will use the mean of all climate data rasters for an annual average
+m.annual.max <- raster::extract(mean(temp_max[[1:12]]), sp)
+m.annual.min <- raster::extract(mean(temp_min[[1:12]]), sp)
+
+# these data are in units celsius*10, so lets convert to normal celsius
+m.annual.max<- m.annual.max/10
+m.annual.min<- m.annual.min/10
+
+# And again, build our spdat data frame
+spdat$temp_avmax <- m.annual.max
+spdat$temp_avmin <- m.annual.min
+
+# we can also average both values for a typical annual average
+# since the values will likely be correlated with elevation
+spdat$temp_avg <- (m.annual.max + m.annual.min)/2
+
+head(spdat)
+
+# ~~~~~~~~~~~~ simple analyses ~~~~~~~~~~~~~~~~~~~~~~~~
+
+# based on our environmental values associated with our occurence 
+# points, we can see the variation by ploting them together
+
+# first lets check if elevation has any effect on the temperature
+# values in winter and spring. we will use a LOESS regression 
+# curve to fit the values since they will likely be variable
+# and difficult to interpret otherwise
+
+
+# Now what about temperature variability and elevation?
+ggplot() +
+  geom_point(spdat, mapping=aes(x=elevation, y=temp_avmin, col = "blue"))+
+  geom_point(spdat, mapping=aes(x=elevation, y=temp_avg, col = "green"))+
+  geom_point(spdat, mapping=aes(x=elevation, y=temp_avmax, col = "red"))+
+  # geom_smooth creates a smoothed trendline describing the data
+  geom_smooth(spdat, mapping=aes(x=elevation, y=temp_avmin, col = "blue"),
+              alpha=0.1)+
+  geom_smooth(spdat, mapping=aes(x=elevation, y=temp_avg, col = "green"),
+              alpha=0.1)+
+  geom_smooth(spdat, mapping=aes(x=elevation, y=temp_avmax, col = "red"),
+              alpha=0.1)+
+  scale_color_discrete(name = "temperatures", labels = c("avg min", 
+                                                   "avg",
+                                                   "avg max"))
+
+# as suspected, the temperatures follow a linear trend, where
+# they decline as they as elevation increases.
+
+# Typically, you would use the associated dates with the GBIF
+# data to derive these values, since they would be correlated with
+# the occurrences, but this is just an example to show how we can use
+# occurrence data to pull our environmental data
+
+# Lets save our data in case we want to use it later
+write.csv(spdat, "Species_env_data.csv")
+
+
+# END
+
