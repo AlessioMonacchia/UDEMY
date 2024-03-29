@@ -1,0 +1,222 @@
+##############################################################
+########## Species Distribution Modelling (SDM) ##############
+############# And Distribution Forecasting ###################
+##############################################################
+
+# To enable MaxEnt to work in R with the dismo package, we first need to download maxent 
+# from here: http://biodiversityinformatics.amnh.org/open_source/maxent/
+# and then place the Maxent.jar file into the dismo package folder 
+# located at ...C:\Users\user\Documents\R\win-library\3.6\dismo\java
+
+# also make sure you have the correct java version installed. and add it to your
+# system path by opening your command prompt and copy/paste: 
+# setx PATH "C:\Program Files\Java\jre1.8.0_211\bin\server;%PATH%"
+# then run this line
+if (Sys.getenv("JAVA_HOME")!="")
+  Sys.setenv(JAVA_HOME="")
+library(rJava)
+
+#---------------------------------------------------------------------
+
+
+#set the working directory 
+setwd("/home/alessio/Udemy_Ecology_in_R/Lesson 3 Range Maps and SDM")
+
+# We will start by opening all necessary
+# packages for the excersise
+
+library(dismo)
+library(jsonlite)
+library(mapdata)
+library(raster)
+library(mapview)
+library(ggplot2)
+library(dplyr)
+library(rgbif)
+
+
+# As we did in the last lesson, we will start by pulling some 
+# GBIF data. I will use the same occurence data set as last time
+# because there is very minimal cleaning necessary. 
+key <- name_suggest(q = "Capricornis swinhoei", rank = "species")$data$key[1]
+occ_search(taxonKey=key, limit=0)$meta$count
+spdat <- occ_search(taxonKey = key, return = "data", limit = 100)
+dat <- spdat$data
+
+
+# keep only coordinates and species name
+spdat <- select(dat, decimalLongitude, decimalLatitude, species)
+colnames(spdat) <- c("longitude", "latitude", "species")
+# remove NA values
+spdat <- na.omit(spdat)
+# remove duplicates
+spdat <- unique(spdat)
+#make a spatialpoints object
+sp <- SpatialPoints(cbind(spdat$longitude, spdat$latitude),
+                    proj4string = CRS("+init=epsg:4326"))
+# re-add species names
+sp$species <- spdat$species
+#check the points
+mapview(sp) 
+
+# get mean location to query raster data
+mlong <- mean(sp@coords[,1])
+mlat <- mean(sp@coords[,2])
+
+
+#~~~~~~~~~~~~~~~~~~~~~ ENVIRONMENTAL DATA ~~~~~~~~~~~~~~~~~~
+
+# Since we're focusing only on species in Taiwan we will pull a raster
+# outline of the country so we can trim the extent of our environmental variables
+# to it using the GADM and iso3 (3 letter country code) "TWN"
+Taiwan <- getData("GADM", country = "TWN", level = 0)
+#Check our raster file
+plot(Taiwan)
+#add our points
+points(sp, col = "red")
+
+
+# As we did in the last lesson, we will use the raster package to pull 
+# our environmental data, only this time we will use "bioclim" 
+# data instead of minimum and maximum temperature data. we will also 
+# get future forcasted environmental data to make future predictions for 
+# our species distributions
+
+# query current environmental data for our location
+clim.current <- getData("worldclim", var="bio", res=0.5,
+                        lat = mlat, lon = mlong)
+
+
+# Get future environmental data based on a 50 year extrapolation
+# the model "AC" signifies that it is the "ac85bi50" model
+# one of the various environmental models used in future environmental projections.
+# the "rcp" is "Representative Concentration Pathways" which is the 
+# total concentration of greenhouse gases (not emissions, concentrations)
+# these models take quite a long time to download and only accept 
+# a resolution of 2.5 and above
+clim.future <- getData('CMIP5', var='bio', res=2.5, rcp=85, 
+                       model='AC', year=50)
+
+
+# ~~~~~~~~~~~~~~~~~ Modelling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# To begin, we will crop environment to Taiwan, since the species
+# we are studying only occur on the island
+TWN.ext <- extent(Taiwan)
+
+# crop environmental variable extents
+TWN.model.current <- crop(clim.current,TWN.ext)
+TWN.model.future <- crop(clim.future,TWN.ext)
+
+
+# check that we only have taiwan in our environmental data by plotting 
+# the first bioclim raster
+plot(TWN.model.current[[1]])
+
+
+# use only 20% of the data for testing the model
+# first we will combine the coordinates into a two column dataframe
+sp.occ <- cbind.data.frame(spdat$longitude,spdat$latitude)
+# now we will cluster the data using a 5 partition "k-fold" clustering.
+# this essentially assigns each row of coordinates a value of 1-5
+sp.fold <- kfold(sp.occ, k=5)
+# use only the data that has been assigned 1 for model testing
+sp.test <- sp.occ[sp.fold == 1, ]
+# use the remainder of the clustered points for training
+sp.train <- sp.occ[sp.fold != 1, ]
+
+
+# Now we will fit our current environmental data into the MaxEnt model 
+sp.MaxEnt <- maxent(TWN.model.current, sp.train)
+
+# plot showing significance of each bioclimatic variable
+# each bioclim raster has a meaning (wettest average, dryest average,
+# coldest/hottest average), you need to look the meanings up to determine
+# the significance of their effect on your study species. 
+plot(sp.MaxEnt)
+
+# plot response curves to visualize how the predicted value (between 0-1)
+# is effected by increases in the bioclimatic variable
+response(sp.MaxEnt)
+
+
+# Now we can predict the entire dataset
+sp.pred <- predict(sp.MaxEnt, TWN.model.current)
+
+
+# plot the predictions
+plot(sp.pred, main="Predicted environmental Suitability")
+plot(Taiwan, add=TRUE)
+points(sp, pch="+", cex=0.5)
+
+# we can also visualize it in mapview instead if we want
+mapview(sp.pred, alpha = 0.5) + mapview(sp)
+
+#------------------------------------------------------------
+
+# Now we will run our predictions with the future environmental data
+# However, we first need to change the names of the future model
+# to match that of the current, otherwise we will run 
+# Error in .local(object, ...) : missing layers (or wrong names)
+names(TWN.model.future) <- names(TWN.model.current)
+sp.future <- predict(sp.MaxEnt, TWN.model.future)
+
+#plot future predictions
+plot(sp.future, main="Predicted Future Suitability")
+map(Taiwan, add=TRUE)
+points(sp, pch="+", cex=0.5, col = "red")
+
+# now visualize the change in suitable locations by subtracting 
+# the future and current predicted model, however, we have two different 
+# resolutions, so lets change our sp.pred model to an object called sp.current
+# with a resolution that matches sp.future with the "resample()" function
+sp.current <- resample(sp.pred, sp.future)
+
+# now we can calculate the change
+sp.change <- sp.future - sp.current
+plot(sp.change, main="Predicted Change in Suitability")
+map(Taiwan, add=TRUE)
+points(sp, pch="+", cex=0.5, col = "red")
+
+# Although there is a lot of green on the map, don't let it deceive
+# you. The values have dropped from 0-1 and now go into the negatives,
+# signifying uninhabitable space. 
+
+
+# Now we will test our model by adding background points or
+# pseudoabscences to create noise, and isolate the variabels a bit more
+BG.points <- randomPoints(TWN.model.current, 1000)
+# check our points
+plot(Taiwan)
+points(BG.points)
+
+# Now we can evaluate the model using the function "evaluate()"
+Eval <- evaluate(sp.MaxEnt, p=sp, a=BG.points, x=TWN.model.current)
+
+# plot the evaluation Receiver Operating Characteristic (ROC) curve
+# basically the further the curve (red) is away from the central line
+# (grey) the more accurate the model is. The lower your AUC value,
+# the better your model is. You will need to make several models to
+# compare the AUC in order to find the best fit model.
+plot(Eval, 'ROC')
+
+# plot the change in habitat suitability over the next 
+# 50 year, you will see there are now negative values representing
+# areas that have become unsuitable. 
+sp.change.points = extract(sp.change, sp)
+hist(sp.change.points, main="", xlab="Change in habitat suitability")
+abline(v=0, col="red")
+
+# Run the evaluation itself to examine the model summary
+Eval
+
+plot(sp.pred)
+points(sp)
+
+
+# END
+
+
+
+
+
