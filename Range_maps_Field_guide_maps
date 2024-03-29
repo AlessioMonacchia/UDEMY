@@ -13,16 +13,16 @@ setwd("/home/alessio/Udemy_Ecology_in_R/Lesson 3 Range Maps and SDM")
 # We will start by installing new packages, and opening all necessary
 # packages for the excersise
 
-install.packages("rnaturalearth")
-install.packages("rnaturalearthdata")
-install.packages("sf")
-install.packages("ggspatial")
-install.packages("rJava")
-install.packages("dismo")
-install.packages("rjasonlite")
-install.packages("mapdata")
-install.packages("rgdal")
-install.packages("rJava")
+# install.packages("rnaturalearth")
+# install.packages("rnaturalearthdata")
+# install.packages("sf")
+# install.packages("ggspatial")
+# install.packages("rJava")
+# install.packages("dismo")
+# install.packages("rjasonlite")
+# install.packages("mapdata")
+# install.packages("rgdal")
+# install.packages("rJava")
 
 library(rnaturalearth)
 library(rnaturalearthdata)
@@ -164,7 +164,7 @@ Eval <- evaluate(sp.MaxEnt, p=sp, a=BG.points, x=BLZ.model.current)
 plot(Eval, 'ROC')
 
 # Now we will make a polygon from our sp.pred raster, using only
-# the preicted ranges above 50% probability to create our range map
+# the preicted ranges above 50% probability to create our Range Map
 # first we will assign sp.pred to a raster object named "r"
 r <- sp.pred
 # now we turn every probability below 0.1 (10%) to NA
